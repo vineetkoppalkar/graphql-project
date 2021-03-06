@@ -24,6 +24,8 @@ export class PostResolver {
   ): Promise<Post> {
     const post = em.create(Post, { title });
     await em.persistAndFlush(post);
+
+    console.log(`Post '${title}' has been created!`);
     return post;
   }
 
@@ -41,6 +43,7 @@ export class PostResolver {
     if (typeof title !== 'undefined') {
       post.title = title;
       await em.persistAndFlush(post);
+      console.log(`Post '${title}' has been updated!`);
     }
 
     return post;
@@ -52,6 +55,8 @@ export class PostResolver {
     @Ctx() { em }: MyContext
   ): Promise<Boolean> {
     await em.nativeDelete(Post, { id });
+
+    console.log(`Post '${id}' has been deleted!`);
     return true;
   }
 }

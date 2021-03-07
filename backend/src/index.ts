@@ -6,6 +6,7 @@ import { buildSchema } from 'type-graphql';
 import session from 'express-session';
 import connectRedis from 'connect-redis';
 import redis from 'redis';
+import cors from 'cors';
 
 import microConfig from './mikro-orm.config';
 import { __prod__ } from './constants';
@@ -27,6 +28,14 @@ const main = async () => {
   console.log('Connecting to Redis');
   const RedisStore = connectRedis(session);
   const redisClient = redis.createClient();
+
+  console.log('Setting cors origin and credentials');
+  app.use(
+    cors({
+      origin: 'http://localhost:3000',
+      credentials: true,
+    })
+  );
 
   app.use(
     session({
@@ -57,7 +66,10 @@ const main = async () => {
   });
 
   console.log('Creating GraphQL endpoints');
-  apolloServer.applyMiddleware({ app });
+  apolloServer.applyMiddleware({
+    app,
+    cors: false,
+  });
 
   app.listen(4000, () => {
     console.log('Server started on localhost:4000');

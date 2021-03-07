@@ -41,6 +41,17 @@ class UserResponse {
 
 @Resolver()
 export class UserResolver {
+  @Query(() => User, { nullable: true })
+  async me(@Ctx() { em, req }: MyContext): Promise<User | null> {
+    // User is not logged in
+    if (!req.session.userId) {
+      return null;
+    }
+
+    const user = await em.findOne(User, { id: req.session.userId });
+    return user;
+  }
+
   @Query(() => [User])
   users(@Ctx() { em }: MyContext): Promise<User[]> {
     return em.find(User, {});
@@ -49,7 +60,7 @@ export class UserResolver {
   @Mutation(() => UserResponse)
   async register(
     @Arg('options', () => UsernamePasswordInput) options: UsernamePasswordInput,
-    @Ctx() { em }: MyContext
+    @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
     if (options.username.length <= 2) {
       return {
@@ -96,6 +107,9 @@ export class UserResolver {
       }
     }
 
+    // Stores user id in session by setting a cookie on the client keeping them logged in
+    req.session.userId = user.id;
+
     console.log(`User '${options.username}' has been created!`);
     return {
       user,
@@ -105,7 +119,7 @@ export class UserResolver {
   @Mutation(() => UserResponse)
   async login(
     @Arg('options', () => UsernamePasswordInput) options: UsernamePasswordInput,
-    @Ctx() { em }: MyContext
+    @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
     const user = await em.findOne(User, {
       username: options.username,
@@ -141,6 +155,8 @@ export class UserResolver {
         ],
       };
     }
+
+    req.session.userId = user.id;
 
     console.log(`User '${options.username}' has been logged in!`);
     return {

@@ -4,23 +4,17 @@ import {
   Resolver,
   Mutation,
   Arg,
-  InputType,
   Field,
   Ctx,
   Query,
   ObjectType,
 } from 'type-graphql';
 import argon2 from 'argon2';
+// import { getConnection } from 'typeorm';
+
 import { COOKIE_NAME } from '../constants';
-
-@InputType()
-class UsernamePasswordInput {
-  @Field()
-  username: string;
-
-  @Field()
-  password: string;
-}
+import { UsernamePasswordInput } from './UsernamePasswordInput';
+import { validateRegister } from '../utils/validateRegsiter';
 
 @ObjectType()
 class FieldError {
@@ -42,6 +36,12 @@ class UserResponse {
 
 @Resolver()
 export class UserResolver {
+  // @Mutation(() => Boolean)
+  // async forgotPassword(@Arg('email') email: string, @Ctx() { em }: MyContext) {
+  //   // const user = await em.findOne(User, { email });
+  //   return true;
+  // }
+
   @Query(() => User, { nullable: true })
   async me(@Ctx() { em, req }: MyContext): Promise<User | null> {
     // User is not logged in
@@ -60,41 +60,46 @@ export class UserResolver {
 
   @Mutation(() => UserResponse)
   async register(
-    @Arg('options', () => UsernamePasswordInput) options: UsernamePasswordInput,
+    @Arg('options') options: UsernamePasswordInput,
     @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
-    if (options.username.length <= 2) {
-      return {
-        errors: [
-          {
-            field: 'username',
-            message: 'Username must have atleast 3 characters',
-          },
-        ],
-      };
-    }
-
-    if (options.password.length <= 3) {
-      return {
-        errors: [
-          {
-            field: 'password',
-            message: 'Password must be atleast 4 characters',
-          },
-        ],
-      };
+    const errors = validateRegister(options);
+    if (errors) {
+      return { errors };
     }
 
     const hashedPassword = await argon2.hash(options.password);
     const user = em.create(User, {
+      email: options.email,
       username: options.username,
       password: hashedPassword,
     });
 
+    // let user;
     try {
       await em.persistAndFlush(user);
+      // console.log('Attempting to create user');
+      // console.log({
+      //   email: options.email,
+      //   username: options.username,
+      //   password: hashedPassword,
+      // });
+      // const result = await getConnection()
+      //   .createQueryBuilder()
+      //   .insert()
+      //   .into(User)
+      //   .values({
+      //     email: options.email,
+      //     username: options.username,
+      //     password: hashedPassword,
+      //   })
+      //   .returning('*')
+      //   .execute();
+      // console.log('user saved');
+      // user = result.raw[0];
     } catch (err) {
       console.log(`Could not create user with username '${options.username}!'`);
+      console.log(err);
       if (err.code === '23505' || err.details.includes('already exists')) {
         console.log('Duplicate username error!');
         return {
@@ -119,15 +124,19 @@ export class UserResolver {
 
   @Mutation(() => UserResponse)
   async login(
-    @Arg('options', () => UsernamePasswordInput) options: UsernamePasswordInput,
+    @Arg('usernameOrEmail') usernameOrEmail: string,
+    @Arg('password') password: string,
     @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
-    const user = await em.findOne(User, {
-      username: options.username,
-    });
+    const user = await em.findOne(
+      User,
+      usernameOrEmail.includes('@')
+        ? { email: usernameOrEmail }
+        : { username: usernameOrEmail }
+    );
 
     if (!user) {
-      const error_message = `Could not find a user with username '${options.username}'!`;
+      const error_message = `Could not find user '${usernameOrEmail}'!`;
       console.log(error_message);
       return {
         errors: [
@@ -139,13 +148,10 @@ export class UserResolver {
       };
     }
 
-    const isPasswordValid = await argon2.verify(
-      user.password,
-      options.password
-    );
+    const isPasswordValid = await argon2.verify(user.password, password);
 
     if (!isPasswordValid) {
-      const error_message = `Password incorrect for user with username '${options.username}'!`;
+      const error_message = `Password incorrect for user '${usernameOrEmail}'!`;
       console.log(error_message);
       return {
         errors: [
@@ -159,7 +165,7 @@ export class UserResolver {
 
     req.session.userId = user.id;
 
-    console.log(`User '${options.username}' has been logged in!`);
+    console.log(`User '${usernameOrEmail}' has been logged in!`);
     return {
       user,
     };

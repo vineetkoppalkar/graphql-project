@@ -7,6 +7,7 @@ import session from 'express-session';
 import connectRedis from 'connect-redis';
 import redis from 'redis';
 import cors from 'cors';
+require('dotenv').config();
 
 import microConfig from './mikro-orm.config';
 import { COOKIE_NAME, __prod__ } from './constants';

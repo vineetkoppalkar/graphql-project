@@ -11,12 +11,12 @@ import {
 } from 'type-graphql';
 import argon2 from 'argon2';
 import { v4 } from 'uuid';
-// import { getConnection } from 'typeorm';
 
 import { COOKIE_NAME, FORGET_PASSWORD_PREFIX } from '../constants';
 import { UsernamePasswordInput } from './UsernamePasswordInput';
 import { validateRegister } from '../utils/validateRegsiter';
 import { sendEmail } from '../utils/sendEmail';
+import { getConnection } from 'typeorm';
 
 @ObjectType()
 class FieldError {
@@ -42,7 +42,7 @@ export class UserResolver {
   async changePassword(
     @Arg('token') token: string,
     @Arg('newPassword') newPassword: string,
-    @Ctx() { em, redis, req }: MyContext
+    @Ctx() { redis, req }: MyContext
   ): Promise<UserResponse> {
     if (newPassword.length <= 3) {
       return {
@@ -72,7 +72,8 @@ export class UserResolver {
       };
     }
 
-    const user = await em.findOne(User, { id: parseInt(userId) });
+    const userIdNum = parseInt(userId);
+    const user = await User.findOne(userIdNum);
 
     if (!user) {
       console.log(`ChangePassword: User no longer exists for token '${token}'`);
@@ -87,10 +88,12 @@ export class UserResolver {
     }
 
     const hashedPassword = await argon2.hash(newPassword);
-    user.password = hashedPassword;
 
-    console.log(`ChangePassword: User #${user.id} has changed their password`);
-    await em.persistAndFlush(user);
+    console.log(
+      `ChangePassword: User #${userIdNum} has changed their password`
+    );
+
+    await User.update({ id: userIdNum }, { password: hashedPassword });
 
     // Remove forgot password key from redis
     await redis.del(key);
@@ -104,12 +107,11 @@ export class UserResolver {
   @Mutation(() => Boolean)
   async forgotPassword(
     @Arg('email') email: string,
-    @Ctx() { em, redis }: MyContext
+    @Ctx() { redis }: MyContext
   ) {
-    const user = await em.findOne(User, { email });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       console.log(`ForgotPassword: Could not find user with email '${email}'`);
-
       return true;
     }
 
@@ -131,25 +133,24 @@ export class UserResolver {
   }
 
   @Query(() => User, { nullable: true })
-  async me(@Ctx() { em, req }: MyContext): Promise<User | null> {
+  me(@Ctx() { req }: MyContext) {
     // User is not logged in
     if (!req.session.userId) {
-      return null;
+      return;
     }
 
-    const user = await em.findOne(User, { id: req.session.userId });
-    return user;
+    return User.findOne(req.session.userId);
   }
 
   @Query(() => [User])
-  users(@Ctx() { em }: MyContext): Promise<User[]> {
-    return em.find(User, {});
+  users(): Promise<User[]> {
+    return User.find();
   }
 
   @Mutation(() => UserResponse)
   async register(
     @Arg('options') options: UsernamePasswordInput,
-    @Ctx() { em, req }: MyContext
+    @Ctx() { req }: MyContext
   ): Promise<UserResponse> {
     const errors = validateRegister(options);
     if (errors) {
@@ -157,21 +158,13 @@ export class UserResolver {
     }
 
     const hashedPassword = await argon2.hash(options.password);
-    const user = em.create(User, {
-      email: options.email,
-      username: options.username,
-      password: hashedPassword,
-    });
-
-    // let user;
+    let user;
     try {
-      await em.persistAndFlush(user);
-      // console.log('Attempting to create user');
-      // console.log({
-      //   email: options.email,
-      //   username: options.username,
-      //   password: hashedPassword,
-      // });
+      user = await User.create({
+        email: options.email,
+        username: options.username,
+        password: hashedPassword,
+      }).save();
       // const result = await getConnection()
       //   .createQueryBuilder()
       //   .insert()
@@ -183,7 +176,6 @@ export class UserResolver {
       //   })
       //   .returning('*')
       //   .execute();
-      // console.log('user saved');
       // user = result.raw[0];
     } catch (err) {
       console.log(`Could not create user with username '${options.username}!'`);
@@ -202,7 +194,9 @@ export class UserResolver {
     }
 
     // Stores user id in session by setting a cookie on the client keeping them logged in
-    req.session.userId = user.id;
+    if (user) {
+      req.session.userId = user.id;
+    }
 
     console.log(`User '${options.username}' has been created!`);
     return {
@@ -214,13 +208,12 @@ export class UserResolver {
   async login(
     @Arg('usernameOrEmail') usernameOrEmail: string,
     @Arg('password') password: string,
-    @Ctx() { em, req }: MyContext
+    @Ctx() { req }: MyContext
   ): Promise<UserResponse> {
-    const user = await em.findOne(
-      User,
+    const user = await User.findOne(
       usernameOrEmail.includes('@')
-        ? { email: usernameOrEmail }
-        : { username: usernameOrEmail }
+        ? { where: { email: usernameOrEmail } }
+        : { where: { username: usernameOrEmail } }
     );
 
     if (!user) {

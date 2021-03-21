@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { MikroORM } from '@mikro-orm/core';
 import express from 'express';
 import { ApolloServer } from 'apollo-server-express';
 import { buildSchema } from 'type-graphql';
@@ -7,21 +6,27 @@ import session from 'express-session';
 import connectRedis from 'connect-redis';
 import Redis from 'ioredis';
 import cors from 'cors';
+import { createConnection } from 'typeorm';
 require('dotenv').config();
 
-import microConfig from './mikro-orm.config';
 import { COOKIE_NAME, __prod__ } from './constants';
 import { HelloResolver } from './resolvers/hello';
 import { PostResolver } from './resolvers/post';
 import { UserResolver } from './resolvers/user';
-import { MyContext } from './types';
+import { Post } from './entities/Post';
+import { User } from './entities/User';
 
 const main = async () => {
   console.log('Connecting to db');
-  const orm = await MikroORM.init(microConfig);
-
-  console.log('Running migrations');
-  await orm.getMigrator().up();
+  await createConnection({
+    type: 'postgres',
+    database: 'fullstackdb2',
+    username: 'postgres',
+    password: 'postgres',
+    logging: true,
+    synchronize: true,
+    entities: [Post, User],
+  });
 
   console.log('Creating the Express server');
   const app = express();
@@ -63,7 +68,7 @@ const main = async () => {
       resolvers: [HelloResolver, PostResolver, UserResolver],
       validate: false,
     }),
-    context: ({ req, res }): MyContext => ({ em: orm.em, req, res, redis }),
+    context: ({ req, res }) => ({ req, res, redis }),
   });
 
   console.log('Creating GraphQL endpoints');

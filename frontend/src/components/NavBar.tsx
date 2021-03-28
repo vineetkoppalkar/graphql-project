@@ -44,7 +44,14 @@ const NavBar: React.FC<NavBarProps> = ({}) => {
   }
 
   return (
-    <Flex bg="gray.700" py={2} color="whatsapp.300">
+    <Flex
+      position="sticky"
+      top={0}
+      zIndex={1}
+      bg="gray.700"
+      py={2}
+      color="whatsapp.300"
+    >
       <Spacer />
       <Flex alignItems="center">
         <NextLink href="/">
